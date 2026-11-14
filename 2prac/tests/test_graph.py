@@ -10,7 +10,7 @@ from src.graph import (
 from src.nuget import Dependency
 
 
-# Константы тестовых данных
+
 PACKAGE_VERSION = "1.0"
 FRAMEWORK = "net8.0"
 DEFAULT_FILTER = ""

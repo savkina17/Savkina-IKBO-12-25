@@ -20,62 +20,67 @@ def print_graph(graph):
         print(f"  {parent} -> {child}")
 
 
-def main():
-    """Запускает полный процесс анализа зависимостей."""
+def build_test_mode_graph(settings):
+    """Строит граф из тестового JSON-файла."""
 
-    settings = parse_arguments()
-    print_settings(settings)
+    graph = build_test_graph(
+        settings.test_file,
+        settings.package,
+        settings.depth,
+        settings.filter_text
+    )
+    return graph, settings.package
 
-    if settings.test_mode:
-        graph = build_test_graph(
-            settings.test_file,
-            settings.package,
-            settings.depth,
-            settings.filter_text
-        )
-        root = settings.package
 
-    else:
-        client = NuGetClient(settings.repository)
+def build_nuget_graph(settings):
+    """Получает зависимости NuGet и строит граф."""
 
-        builder = GraphBuilder(
-            client,
-            settings.framework,
-            settings.depth,
-            settings.filter_text
-        )
+    client = NuGetClient(settings.repository)
 
-        dependencies = client.get_dependencies(
-            settings.package,
-            settings.version,
-            settings.framework
-        )
+    builder = GraphBuilder(
+        client,
+        settings.framework,
+        settings.depth,
+        settings.filter_text
+    )
 
-        print("\nПрямые зависимости:")
+    dependencies = client.get_dependencies(
+        settings.package,
+        settings.version,
+        settings.framework
+    )
 
-        for dependency in dependencies:
-            print(
-                f"  {dependency.package_id}: "
-                f"{dependency.version_spec}"
-            )
+    print("\nПрямые зависимости:")
 
-        graph = builder.build(
-            settings.package,
-            settings.version
+    for dependency in dependencies:
+        print(
+            f"  {dependency.package_id}: "
+            f"{dependency.version_spec}"
         )
 
-        root = f"{settings.package}@{settings.version}"
+    graph = builder.build(
+        settings.package,
+        settings.version
+    )
 
-    print_graph(graph)
+    root = f"{settings.package}@{settings.version}"
+    return graph, root
 
-    if settings.load_order:
-        print("\nПорядок загрузки:")
 
-        for index, package in enumerate(
-            get_load_order(graph, root),
-            start=1
-        ):
-            print(f"{index}. {package}")
+def print_load_order(graph, root):
+    """Выводит порядок загрузки пакетов."""
+
+    print("\nПорядок загрузки:")
+
+    for index, package in enumerate(
+        get_load_order(graph, root),
+        start=1
+    ):
+        print(f"{index}. {package}")
+
+
+def generate_output_files(graph, settings):
+    """Создаёт файлы PlantUML и SVG."""
 
     plantuml_file = generate_plantuml(
         graph,
@@ -90,6 +95,25 @@ def main():
 
     print(f"\nPlantUML: {plantuml_file}")
     print(f"SVG: {svg_file}")
+
+
+def main():
+    """Запускает полный процесс анализа зависимостей."""
+
+    settings = parse_arguments()
+    print_settings(settings)
+
+    if settings.test_mode:
+        graph, root = build_test_mode_graph(settings)
+    else:
+        graph, root = build_nuget_graph(settings)
+
+    print_graph(graph)
+
+    if settings.load_order:
+        print_load_order(graph, root)
+
+    generate_output_files(graph, settings)
 
 
 if __name__ == "__main__":
