@@ -5,7 +5,7 @@ import json
 import re
 import urllib.error
 import urllib.request
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as et
 
 from dataclasses import dataclass
 from functools import total_ordering
@@ -30,6 +30,7 @@ class PackageVersion:
         """Возвращает числовые компоненты версии."""
 
         numbers = re.match(r"^\d+(?:\.\d+)*", self.value)
+
         if not numbers:
             return (0,)
 
@@ -115,8 +116,35 @@ class NuGetClient:
                 key=lambda value: PackageVersion(value)
             )
 
+        version_range = NuGetClient.parse_version_range(
+            specification
+        )
+
+        if version_range is None:
+            return None
+
+        candidates = [
+            version
+            for version in versions
+            if NuGetClient.is_version_in_range(
+                version, version_range
+            )
+        ]
+
+        if not candidates:
+            return None
+
+        return min(
+            candidates,
+            key=lambda value: PackageVersion(value)
+        )
+
+    @staticmethod
+    def parse_version_range(specification):
+        """Разбирает границы диапазона версий."""
+
         match = re.fullmatch(
-            r"([\[(])([^,]*)?(?:,([^]]*))?([\])])",
+            r"(\[|\()([^,]*)(?:,([^]]*))?(\]|\))",
             specification
         )
 
@@ -129,31 +157,57 @@ class NuGetClient:
             lower = lower or ""
             upper = lower
 
-        candidates = []
+        return left, lower, upper, right
 
-        for version in versions:
-            current = PackageVersion(version)
+    @staticmethod
+    def is_version_in_range(version, version_range):
+        """Проверяет попадание версии в заданный диапазон."""
 
-            if lower:
-                boundary = PackageVersion(lower)
-                if current < boundary:
-                    continue
-                if current == boundary and left == "(":
-                    continue
+        left, lower, upper, right = version_range
+        current = PackageVersion(version)
 
-            if upper:
-                boundary = PackageVersion(upper)
-                if boundary < current:
-                    continue
-                if current == boundary and right == ")":
-                    continue
+        return (
+            NuGetClient.check_lower_bound(
+                current, lower, left
+            )
+            and NuGetClient.check_upper_bound(
+                current, upper, right
+            )
+        )
 
-            candidates.append(version)
+    @staticmethod
+    def check_lower_bound(current, lower, left):
+        """Проверяет соблюдение нижней границы диапазона."""
 
-        if not candidates:
-            return None
+        if not lower:
+            return True
 
-        return min(candidates, key=lambda value: PackageVersion(value))
+        boundary = PackageVersion(lower)
+
+        if current < boundary:
+            return False
+
+        if current == boundary and left == "(":
+            return False
+
+        return True
+
+    @staticmethod
+    def check_upper_bound(current, upper, right):
+        """Проверяет соблюдение верхней границы диапазона."""
+
+        if not upper:
+            return True
+
+        boundary = PackageVersion(upper)
+
+        if boundary < current:
+            return False
+
+        if current == boundary and right == ")":
+            return False
+
+        return True
 
     def get_dependencies(self, package_id, version, framework):
         """Получает прямые зависимости из nuspec-файла."""
@@ -164,27 +218,31 @@ class NuGetClient:
         )
 
         xml_data = self.request(url)
-        root = ET.fromstring(xml_data)
+        root = et.fromstring(xml_data)
 
-        dependencies = self.find_dependency_group(root, framework)
-
-        return dependencies
+        return self.find_dependency_group(root, framework)
 
     @staticmethod
     def find_dependency_group(root, framework):
         """Выбирает группу зависимостей для целевой платформы."""
 
-        groups = root.findall(".//{*}dependencies/{*}group")
+        groups = root.findall(
+            ".//{*}dependencies/{*}group"
+        )
 
         if not groups:
             return NuGetClient.parse_dependencies(
-                root.findall(".//{*}dependencies/{*}dependency")
+                root.findall(
+                    ".//{*}dependencies/{*}dependency"
+                )
             )
 
         normalized = framework.lower()
 
         for group in groups:
-            target = group.attrib.get("targetFramework", "").lower()
+            target = group.attrib.get(
+                "targetFramework", ""
+            ).lower()
 
             if target == normalized:
                 return NuGetClient.parse_dependencies(
@@ -197,7 +255,6 @@ class NuGetClient:
                     group.findall("{*}dependency")
                 )
 
-        # Если точного совпадения нет, используем первую группу.
         print(
             f"Предупреждение: группа {framework} не найдена. "
             "Используется первая доступная группа."

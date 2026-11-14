@@ -31,3 +31,6 @@ output/*
 .DS_Store
 Thumbs.db
 comparison/obj/
+
+# PlantUML
+plantuml.jar

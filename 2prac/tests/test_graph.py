@@ -10,6 +10,21 @@ from src.graph import (
 from src.nuget import Dependency
 
 
+# Константы тестовых данных
+PACKAGE_VERSION = "1.0"
+FRAMEWORK = "net8.0"
+DEFAULT_FILTER = ""
+DEFAULT_DEPTH = 5
+LIMITED_DEPTH = 1
+
+EXPECTED_GRAPH_SIZE = 4
+EXPECTED_LIMITED_GRAPH_SIZE = 3
+
+ROOT_PACKAGE = "A"
+DEPENDENCY_PACKAGE = "B"
+TRANSITIVE_PACKAGE = "D"
+
+
 class FakeClient:
     """Имитирует NuGet-клиент без HTTP-запросов."""
 
@@ -17,9 +32,12 @@ class FakeClient:
         """Создаёт заранее заданные зависимости."""
 
         self.data = {
-            "A": [Dependency("B", "1.0"), Dependency("C", "1.0")],
-            "B": [Dependency("D", "1.0")],
-            "C": [Dependency("D", "1.0")],
+            "A": [
+                Dependency("B", PACKAGE_VERSION),
+                Dependency("C", PACKAGE_VERSION)
+            ],
+            "B": [Dependency("D", PACKAGE_VERSION)],
+            "C": [Dependency("D", PACKAGE_VERSION)],
             "D": []
         }
 
@@ -47,44 +65,56 @@ def test_graph_edges():
 def test_recursive_bfs():
     """Проверяет транзитивное построение графа."""
 
-    builder = GraphBuilder(FakeClient(), "net8.0", 5, "")
-    graph = builder.build("A", "1.0")
+    builder = GraphBuilder(
+        FakeClient(), FRAMEWORK, DEFAULT_DEPTH, DEFAULT_FILTER
+    )
+    graph = builder.build(ROOT_PACKAGE, PACKAGE_VERSION)
 
-    assert len(graph.vertices()) == 4
-    assert ("B@1.0", "D@1.0") in graph.edges()
+    assert len(graph.vertices()) == EXPECTED_GRAPH_SIZE
+    assert (
+        f"{DEPENDENCY_PACKAGE}@{PACKAGE_VERSION}",
+        f"{TRANSITIVE_PACKAGE}@{PACKAGE_VERSION}"
+    ) in graph.edges()
 
 
 def test_depth_limit():
     """Проверяет ограничение глубины обхода."""
 
-    builder = GraphBuilder(FakeClient(), "net8.0", 1, "")
-    graph = builder.build("A", "1.0")
+    builder = GraphBuilder(
+        FakeClient(), FRAMEWORK, LIMITED_DEPTH, DEFAULT_FILTER
+    )
+    graph = builder.build(ROOT_PACKAGE, PACKAGE_VERSION)
 
-    assert len(graph.vertices()) == 3
+    assert len(graph.vertices()) == EXPECTED_LIMITED_GRAPH_SIZE
     assert not any(
-        parent.startswith("B@") for parent, child in graph.edges()
+        parent.startswith(f"{DEPENDENCY_PACKAGE}@")
+        for parent, child in graph.edges()
     )
 
 
 def test_filter():
     """Проверяет исключение пакетов по подстроке."""
 
-    builder = GraphBuilder(FakeClient(), "net8.0", 5, "C")
-    graph = builder.build("A", "1.0")
+    builder = GraphBuilder(
+        FakeClient(), FRAMEWORK, DEFAULT_DEPTH, "C"
+    )
+    graph = builder.build(ROOT_PACKAGE, PACKAGE_VERSION)
 
-    assert "C@1.0" not in graph.vertices()
+    assert f"C@{PACKAGE_VERSION}" not in graph.vertices()
 
 
 def test_cycle_detection_in_bfs():
     """Проверяет безопасный обход циклического графа."""
 
     client = FakeClient()
-    client.data["D"] = [Dependency("A", "1.0")]
+    client.data["D"] = [Dependency("A", PACKAGE_VERSION)]
 
-    builder = GraphBuilder(client, "net8.0", 5, "")
-    graph = builder.build("A", "1.0")
+    builder = GraphBuilder(
+        client, FRAMEWORK, DEFAULT_DEPTH, DEFAULT_FILTER
+    )
+    graph = builder.build(ROOT_PACKAGE, PACKAGE_VERSION)
 
-    assert len(graph.vertices()) == 4
+    assert len(graph.vertices()) == EXPECTED_GRAPH_SIZE
 
 
 def test_load_order():
@@ -123,7 +153,9 @@ def test_test_repository(tmp_path):
         encoding="utf-8"
     )
 
-    graph = build_test_graph(path, "A", 1, "")
+    graph = build_test_graph(
+        path, ROOT_PACKAGE, LIMITED_DEPTH, DEFAULT_FILTER
+    )
 
     assert "B" in graph.vertices()
     assert "C" not in graph.vertices()

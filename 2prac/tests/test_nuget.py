@@ -1,7 +1,7 @@
 
 """Тесты обработки NuGet-версий и XML."""
 
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as et
 
 from src.nuget import NuGetClient, PackageVersion
 
@@ -43,7 +43,7 @@ def test_parse_dependencies():
     </dependencies>
     """
 
-    root = ET.fromstring(xml)
+    root = et.fromstring(xml)
     elements = root.findall(".//dependency")
     result = NuGetClient.parse_dependencies(elements)
 
@@ -70,7 +70,7 @@ def test_framework_group():
     </package>
     """
 
-    root = ET.fromstring(xml)
+    root = et.fromstring(xml)
     result = NuGetClient.find_dependency_group(root, "net8.0")
 
     assert result[0].package_id == "Modern"
